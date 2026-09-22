@@ -1,0 +1,13 @@
+crypto-lab-export-grade
+Copyright 2026 Paul Clark
+
+This product includes a modified TypeScript port of TEA1 from
+MidnightBlueLabs/TETRA_crypto:
+
+  Copyright 2023, Midnight Blue.
+  Licensed under the Apache License, Version 2.0.
+
+The modified files are src/tea1/constants.ts, src/tea1/keyload.ts,
+src/tea1/core.ts, and the reference-vector portions of
+src/tea1/core.test.ts. A copy of the Apache License is provided at
+THIRD_PARTY_LICENSES/Apache-2.0.txt.

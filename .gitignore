@@ -1,0 +1,9 @@
+template.md
+_MASTER-TEMPLATE.md
+CRYPTO-LAB-TEMPLATE*.md
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.DS_Store

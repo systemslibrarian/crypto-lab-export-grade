@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <script>
+      // Dark is the only theme. Pin it before first paint, and overwrite any
+      // 'light' a visitor stored back when the header carried a theme toggle.
+      (function () {
+        try {
+          localStorage.setItem('theme', 'dark');
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', 'dark');
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="An interactive TEA1 lab that runs the real cipher, exposes its 80-bit-to-32-bit key reduction, and searches the effective keyspace."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Export Grade — crypto-lab" />
+    <meta
+      property="og:description"
+      content="Run real TEA1, inspect its 80-bit-to-32-bit key load, and recover an effective key in a browser-sized search window."
+    />
+    <meta
+      property="og:url"
+      content="https://systemslibrarian.github.io/crypto-lab-export-grade/"
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Export Grade — crypto-lab" />
+    <meta
+      name="twitter:description"
+      content="Run real TEA1, inspect its 80-bit-to-32-bit key load, and recover an effective key in a browser-sized search window."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%9A%93</text></svg>"
+    />
+    <title>Export Grade — crypto-lab</title>
+  </head>
+  <body>
+    <style>
+      .cl-topbar {
+        --cl-ink: color-mix(in srgb, var(--accent, #35d6bb) 60%, #eafff8);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.7rem clamp(0.9rem, 3vw, 2rem);
+        background: #0b1512;
+        border-bottom: 1px solid color-mix(in srgb, var(--accent, #35d6bb) 22%, transparent);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+      }
+      .cl-brand { display: flex; align-items: center; gap: 0.8rem; text-decoration: none; }
+      .cl-badge {
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border: 1.5px solid var(--accent, #35d6bb);
+        border-radius: 10px;
+        color: var(--cl-ink);
+        font-weight: 700;
+        font-size: 0.95rem;
+        letter-spacing: 0.05em;
+      }
+      .cl-brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+      .cl-title { color: #eafff8; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.12em; }
+      .cl-sub { color: #5e8b80; font-size: 0.72rem; letter-spacing: 0.04em; }
+      .cl-actions { display: flex; align-items: center; gap: 0.5rem; }
+      .cl-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 0.85rem;
+        border-radius: 10px;
+        border: 1px solid color-mix(in srgb, var(--cl-ink) 70%, transparent);
+        background: transparent;
+        color: var(--cl-ink);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        text-decoration: none;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+      }
+      .cl-btn:hover {
+        background: color-mix(in srgb, var(--accent, #35d6bb) 14%, transparent);
+        border-color: var(--accent, #35d6bb);
+        color: #eafff8;
+      }
+      .cl-btn svg { width: 15px; height: 15px; }
+      .cl-skip-link {
+        position: absolute;
+        left: 0.5rem;
+        top: -3rem;
+        z-index: 1001;
+        padding: 0.55rem 1rem;
+        border-radius: 0 0 10px 10px;
+        background: #eafff8;
+        color: #0b1512;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-decoration: none;
+        transition: top 0.15s ease;
+      }
+      .cl-skip-link:focus { top: 0; outline: 2px solid var(--accent, #35d6bb); outline-offset: 2px; }
+      @media (max-width: 560px) {
+        .cl-sub { display: none; }
+        .cl-btn span { display: none; }
+        .cl-btn svg { margin: 0; }
+      }
+      @media (pointer: coarse) {
+        .cl-btn { min-height: 44px; }
+      }
+      @media (pointer: coarse) and (min-width: 380px) {
+        .cl-btn { min-width: 44px; }
+      }
+    </style>
+    <a class="cl-skip-link" href="#app">Skip to content</a>
+    <header class="cl-topbar" role="banner" aria-label="Crypto Lab">
+      <a class="cl-brand" href="https://crypto-lab.systemslibrarian.dev/" aria-label="Crypto Lab home">
+        <span class="cl-badge">CL</span>
+        <span class="cl-brand-text">
+          <span class="cl-title">CRYPTO LAB</span>
+          <span class="cl-sub">systemslibrarian.dev</span>
+        </span>
+      </a>
+      <nav class="cl-actions" aria-label="Crypto Lab navigation">
+        <a class="cl-btn" href="https://crypto-lab.systemslibrarian.dev/" aria-label="Crypto Lab menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <span>Menu</span>
+        </a>
+        <a class="cl-btn" href="https://github.com/systemslibrarian/crypto-lab-export-grade" target="_blank" rel="noopener" aria-label="View this project on GitHub">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </nav>
+    </header>
+
+    <main id="app" tabindex="-1">
+      <div class="page-shell">
+        <header class="cl-hero">
+          <div class="cl-hero-main">
+            <h1 class="cl-hero-title">Export Grade</h1>
+            <p class="cl-hero-sub">TETRA · TEA1 · Key Reduction</p>
+            <p class="cl-hero-desc">
+              Run real TEA1, watch its 80-bit key collapse into a 32-bit register, then recover that effective key against the same cipher.
+            </p>
+          </div>
+          <aside class="cl-hero-why" aria-label="Why it matters">
+            <span class="cl-hero-why-label">WHY IT MATTERS</span>
+            <p class="cl-hero-why-text">
+              A cipher can accept an 80-bit key and still provide only 32 bits of resistance. The label survives; the entropy does not.
+            </p>
+          </aside>
+        </header>
+
+        <section class="field-note" aria-labelledby="field-note-title">
+          <div>
+            <p class="section-kicker">FIELD NOTE / TETRA AIR INTERFACE</p>
+            <h2 id="field-note-title">The cipher works. The key is still reduced.</h2>
+            <p>
+              TETRA is an ETSI trunked-radio standard used in more than 100 countries by police, military, transport, industry, and critical infrastructure. TEA1 is one air-interface stream cipher: it accepts ten key bytes, but its generator receives only one four-byte register.
+            </p>
+          </div>
+          <dl class="signal-facts" aria-label="TETRA facts">
+            <div><dt>STANDARDIZED</dt><dd>1995</dd></div>
+            <div><dt>INPUT KEY</dt><dd>80 bits</dd></div>
+            <div><dt>WORKING KEY</dt><dd>32 bits</dd></div>
+          </dl>
+        </section>
+
+        <div class="lab-tabs" role="tablist" aria-label="Export Grade lab panes">
+          <button id="tab-cipher" class="lab-tab" type="button" role="tab" aria-selected="true" aria-controls="pane-cipher" tabindex="0">
+            <span>01</span> The Cipher
+          </button>
+          <button id="tab-reduction" class="lab-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-reduction" tabindex="-1">
+            <span>02</span> The Reduction
+          </button>
+          <button id="tab-break" class="lab-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-break" tabindex="-1">
+            <span>03</span> The Break
+          </button>
+        </div>
+
+        <section id="pane-cipher" class="lab-pane" role="tabpanel" aria-labelledby="tab-cipher">
+          <div class="pane-heading">
+            <div>
+              <p class="section-kicker">PANE 01 / COMPLIANCE FIRST</p>
+              <h2>The Cipher</h2>
+            </div>
+            <p>TEA1 is a stream cipher: a key and frame number produce bytes that are XORed with radio traffic. This implementation is a TypeScript port of Midnight Blue's Apache-2.0 reference.</p>
+          </div>
+
+          <div class="cipher-workbench">
+            <form id="cipher-form" class="control-stack" novalidate>
+              <div class="field">
+                <label for="key-input">80-bit key <span>20 hexadecimal characters</span></label>
+                <input id="key-input" name="key" type="text" value="00000000000000000000" inputmode="text" autocomplete="off" spellcheck="false" maxlength="29" aria-describedby="key-help" />
+                <small id="key-help">Spaces are allowed. The default is the upstream zero-key test vector.</small>
+              </div>
+              <div class="control-row">
+                <div class="field">
+                  <label for="frame-input">Frame number</label>
+                  <input id="frame-input" name="frame" type="text" value="0x11111111" inputmode="text" autocomplete="off" spellcheck="false" maxlength="10" />
+                </div>
+                <div class="field field-short">
+                  <label for="length-input">Output bytes</label>
+                  <input id="length-input" name="length" type="number" value="10" min="4" max="32" step="1" />
+                </div>
+              </div>
+              <p id="cipher-error" class="form-error" role="alert" hidden></p>
+              <button class="action-button" type="submit">Generate keystream</button>
+            </form>
+
+            <div class="output-console" role="region" aria-label="TEA1 output">
+              <div class="console-header"><span>TEA1 / OUTPUT</span><span id="cipher-byte-count">10 BYTES</span></div>
+              <output id="keystream-output" class="hex-output" aria-live="polite"></output>
+              <div id="kat-verdict" class="verdict" role="status" aria-live="polite" data-state="pending">
+                Reference KAT pending
+              </div>
+              <p class="console-note">Fixture: frame 0x11111111, zero key, expected d3 3f d8 a6 05 a0 a1 bb 90 23.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="pane-reduction" class="lab-pane" role="tabpanel" aria-labelledby="tab-reduction" hidden>
+          <div class="pane-heading">
+            <div>
+              <p class="section-kicker">PANE 02 / THE HEADLINE</p>
+              <h2>The Reduction</h2>
+            </div>
+            <p>Feed the ten key bytes into the exact initialization loop. Each round shifts the register and appends one S-box byte; after all ten rounds, only four bytes remain.</p>
+          </div>
+
+          <div class="strength-readout" role="group" aria-label="Nominal and effective key strength">
+            <div class="strength nominal"><span>NOMINAL INPUT</span><strong><output id="nominal-bits">80</output> bits</strong></div>
+            <div class="strength-arrow" aria-hidden="true">→</div>
+            <div class="strength effective"><span>EFFECTIVE REGISTER</span><strong><output id="effective-bits">32</output> bits</strong></div>
+          </div>
+
+          <div class="key-funnel" role="group" aria-label="TEA1 key-load visualization">
+            <div class="bit-stage">
+              <div class="stage-label"><span>KEY BYTES</span><span id="load-step-label">0 / 10 loaded</span></div>
+              <div id="key-bit-grid" class="key-bit-grid" role="list" aria-label="Eighty input key bits"></div>
+            </div>
+            <div class="funnel-neck" aria-hidden="true"><span>tea1_init_key_register</span></div>
+            <div class="bit-stage register-stage">
+              <div class="stage-label"><span>GENERATOR REGISTER</span><span>4 bytes</span></div>
+              <div id="register-bit-grid" class="register-bit-grid" role="list" aria-label="Thirty-two-bit working register"></div>
+              <output id="register-output" class="register-output">0x00000000</output>
+            </div>
+          </div>
+
+          <div class="reduction-controls">
+            <button id="load-reset" class="secondary-button" type="button">Reset</button>
+            <button id="load-next" class="action-button" type="button">Load next byte</button>
+            <button id="load-all" class="secondary-button" type="button">Run all ten</button>
+          </div>
+          <p id="load-equation" class="load-equation">Register starts at 0x00000000.</p>
+          <div id="reduction-verdict" class="verdict reduction-verdict" role="status" aria-live="polite" data-state="pending">
+            Load all ten bytes to inspect the working key.
+          </div>
+
+          <div class="trace-region" role="region" aria-label="Key-load trace" tabindex="0">
+            <table>
+              <caption>Executed key-load rounds</caption>
+              <thead><tr><th scope="col">Round</th><th scope="col">Input</th><th scope="col">S-box index</th><th scope="col">S-box byte</th><th scope="col">Register after</th></tr></thead>
+              <tbody id="trace-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="pane-break" class="lab-pane" role="tabpanel" aria-labelledby="tab-break" hidden>
+          <div class="pane-heading">
+            <div>
+              <p class="section-kicker">PANE 03 / SEARCH AND RECORD</p>
+              <h2>The Break</h2>
+            </div>
+            <p>For browser tractability, the page selects the 2<sup>16</sup> window containing its local fixture's register. Every candidate in that window is checked with the same TEA1 core; the full space contains 65,536 such windows.</p>
+          </div>
+
+          <div class="attack-workbench">
+            <div class="control-stack">
+              <div class="field">
+                <label for="plaintext-input">Known plaintext <span>hex, 4–8 bytes</span></label>
+                <input id="plaintext-input" type="text" value="524144494f" inputmode="text" autocomplete="off" spellcheck="false" maxlength="23" aria-describedby="plaintext-help" />
+                <small id="plaintext-help">Default bytes spell “RADIO”. All-zero and short fixtures are rejected.</small>
+              </div>
+              <dl class="attack-fixture">
+                <div><dt>CIPHERTEXT</dt><dd id="ciphertext-output">—</dd></div>
+                <div><dt>KNOWN XOR CIPHER</dt><dd id="known-stream-output">—</dd></div>
+                <div><dt>BROWSER WINDOW</dt><dd id="search-range-output">—</dd></div>
+              </dl>
+              <p id="attack-error" class="form-error" role="alert" hidden></p>
+              <div class="button-row">
+                <button id="attack-start" class="action-button" type="button">Start real search</button>
+                <button id="attack-cancel" class="secondary-button" type="button" disabled>Cancel</button>
+              </div>
+            </div>
+
+            <div class="search-monitor">
+              <div class="console-header"><span>WORKER / 65,536 CANDIDATES</span><span id="attack-percent">0.0%</span></div>
+              <progress id="attack-progress" value="0" max="65536">0%</progress>
+              <p id="attack-count">0 / 65,536 tested</p>
+              <p id="attack-status" role="status" aria-live="polite">Ready. The full 32-bit space contains 65,536 windows of this size.</p>
+              <p id="retired-status" class="retired-status" role="status" hidden>A previous result was retired because an input changed.</p>
+              <div id="attack-result" class="attack-result" data-check="pending" hidden>
+                <span class="result-label">EFFECTIVE KEY RECOVERED</span>
+                <strong id="recovered-register">0x00000000</strong>
+                <p id="verification-output">0 / 0 bytes reproduced</p>
+                <p class="ok-broken">OK-AND-BROKEN — the cipher output matches byte-for-byte, and the working key is only 32 bits.</p>
+              </div>
+            </div>
+          </div>
+
+          <section class="framing-section" aria-labelledby="framing-title">
+            <p class="section-kicker">ONE LINE OF CODE / TWO FRAMINGS</p>
+            <h3 id="framing-title">Compliance or backdoor?</h3>
+            <div class="framing-grid">
+              <article class="framing-column">
+                <span class="source-tag">TCCA · UPDATED AUG 2025</span>
+                <h4>Export compliance</h4>
+                <blockquote>“The key reduction was therefore needed to comply with the Wassenaar Arrangement.”</blockquote>
+                <p>TCCA says TEA1 was conceived to be easily exportable and that its equivalent 32-bit key length permitted worldwide export.</p>
+                <a href="https://tcca.info/tetra/tetra-documentation/research_disclosures/" target="_blank" rel="noopener">Read the TCCA response</a>
+              </article>
+              <article class="framing-column researcher-framing">
+                <span class="source-tag">MIDNIGHT BLUE · JUL 2023</span>
+                <h4>Intentional weakness</h4>
+                <blockquote>“A computational step which serves no other purpose than to reduce the key's effective entropy.”</blockquote>
+                <p>The researchers characterize that intentional reduction as a backdoor. This lab shows the step and leaves the label to the evidence.</p>
+                <a href="https://www.midnightblue.nl/research/tetraburst" target="_blank" rel="noopener">Read TETRA:BURST</a>
+              </article>
+            </div>
+          </section>
+
+          <section class="record-section" aria-labelledby="record-title">
+            <p class="section-kicker">THE DISCLOSURE RECORD</p>
+            <h3 id="record-title">From air interface to end-to-end</h3>
+            <ol class="timeline">
+              <li>
+                <time datetime="1995">1995</time>
+                <div><strong>ETSI standardizes TETRA.</strong><p>The professional radio standard goes on to serve public safety, military, transport, industry, and critical infrastructure in more than 100 countries.</p></div>
+              </li>
+              <li>
+                <time datetime="2023">2023</time>
+                <div><strong>TETRA:BURST · USENIX Security 2023.</strong><p>Carlo Meijer, Wouter Bokslag, and Jos Wetzels disclose CVE-2022-24402, the TEA1 80→32-bit reduction, and CVE-2022-24401, an unauthenticated network-time route to induced keystream reuse.</p></div>
+              </li>
+              <li>
+                <time datetime="2025">2025</time>
+                <div><strong>2TETRA:2BURST · Black Hat USA 2025.</strong><p>The same researchers report algorithm ID 135 reducing AES-128 traffic-key entropy to 56 bits (associated with CVE-2025-52941), alongside replay and injection findings. This lab reports that result; it does not re-derive it.</p><p class="record-caveat">Record status checked 22 September 2026: the central 2025 CVE entries remain reserved, so these mappings are attributed to the researchers.</p></div>
+              </li>
+            </ol>
+          </section>
+
+          <section class="scope-strip" aria-labelledby="scope-title">
+            <div><p class="section-kicker">REAL-WORLD BOUNDARY</p><h3 id="scope-title">A lab, not an interception tool</h3></div>
+            <p>This page uses local fixtures only. It includes no radio receiver, no deployed-network traffic, no TEA2, and no full TETRA stack. It does not imply that AES or modern radio cryptography shares TEA1's flaw.</p>
+          </section>
+
+          <nav class="source-row" aria-label="Primary sources">
+            <a href="https://github.com/MidnightBlueLabs/TETRA_crypto" target="_blank" rel="noopener">TEA1 reference code</a>
+            <a href="https://www.usenix.org/conference/usenixsecurity23/presentation/meijer" target="_blank" rel="noopener">USENIX Security 2023</a>
+            <a href="https://www.midnightblue.nl/research/2tetra2burst" target="_blank" rel="noopener">2TETRA:2BURST</a>
+            <a href="https://systemslibrarian.github.io/crypto-lab-corrupted-oracle/">Related: Corrupted Oracle</a>
+          </nav>
+        </section>
+
+        <footer class="scripture-footer">
+          <p>So whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31</p>
+        </footer>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
