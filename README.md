@@ -21,7 +21,7 @@ Do **not** use it to assess a deployed network, intercept radio traffic, infer t
 
 ## Live Demo
 
-[Export Grade deployment target](https://systemslibrarian.github.io/crypto-lab-export-grade/). The catalog remains marked WIP until the first successful Pages deployment.
+[Open Export Grade](https://systemslibrarian.github.io/crypto-lab-export-grade/).
 
 Generate a TEA1 keystream, step through the complete key load, and recover the resulting working register without sending data to a backend.
 
