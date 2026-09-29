@@ -14,9 +14,19 @@ export interface CancelAttackMessage {
 
 export type AttackRequest = StartAttackMessage | CancelAttackMessage;
 
+// `elapsedMs` is the wall clock around the search loop that already runs. It adds
+// no work and starts no second search; Exhibit 5 divides `checked` by it to get
+// the only rate this page ever quotes.
+interface AttackProgressFields {
+  requestId: number;
+  checked: number;
+  total: number;
+  elapsedMs: number;
+}
+
 export type AttackResponse =
-  | { type: 'progress'; requestId: number; checked: number; total: number }
-  | { type: 'found'; requestId: number; register: number; checked: number; total: number }
-  | { type: 'exhausted'; requestId: number; checked: number; total: number }
-  | { type: 'cancelled'; requestId: number; checked: number; total: number }
-  | { type: 'error'; requestId: number; message: string; checked: number; total: number };
+  | ({ type: 'progress' } & AttackProgressFields)
+  | ({ type: 'found'; register: number } & AttackProgressFields)
+  | ({ type: 'exhausted' } & AttackProgressFields)
+  | ({ type: 'cancelled' } & AttackProgressFields)
+  | ({ type: 'error'; message: string } & AttackProgressFields);

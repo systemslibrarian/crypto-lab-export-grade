@@ -18,6 +18,11 @@ function yieldToWorkerQueue(): Promise<void> {
 async function runAttack(message: StartAttackMessage): Promise<void> {
   const total = message.endRegisterExclusive - message.startRegister;
   let checked = 0;
+  // Time spent inside the search loop that this worker already runs. The yields
+  // below exist only to keep the UI responsive, so they are outside the clock:
+  // this measures TEA1 throughput, not setTimeout's clamp. No extra work is done
+  // for it and no second search is started.
+  let elapsedMs = 0;
 
   try {
     for (
@@ -26,17 +31,19 @@ async function runAttack(message: StartAttackMessage): Promise<void> {
       chunkStart += CHUNK_SIZE
     ) {
       if (cancelledRequests.delete(message.requestId)) {
-        post({ type: 'cancelled', requestId: message.requestId, checked, total });
+        post({ type: 'cancelled', requestId: message.requestId, checked, total, elapsedMs });
         return;
       }
 
       const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, message.endRegisterExclusive);
+      const chunkStartedAt = performance.now();
       const result = findRegisterInRange({
         frameNumber: message.frameNumber,
         targetKeystream: new Uint8Array(message.targetKeystream),
         startRegister: chunkStart,
         endRegisterExclusive: chunkEnd,
       });
+      elapsedMs += performance.now() - chunkStartedAt;
 
       if (result !== null) {
         checked += result.checked;
@@ -46,16 +53,17 @@ async function runAttack(message: StartAttackMessage): Promise<void> {
           register: result.register,
           checked,
           total,
+          elapsedMs,
         });
         return;
       }
 
       checked += chunkEnd - chunkStart;
-      post({ type: 'progress', requestId: message.requestId, checked, total });
+      post({ type: 'progress', requestId: message.requestId, checked, total, elapsedMs });
       await yieldToWorkerQueue();
     }
 
-    post({ type: 'exhausted', requestId: message.requestId, checked, total });
+    post({ type: 'exhausted', requestId: message.requestId, checked, total, elapsedMs });
   } catch (error) {
     post({
       type: 'error',
@@ -63,6 +71,7 @@ async function runAttack(message: StartAttackMessage): Promise<void> {
       message: error instanceof Error ? error.message : 'Unknown worker error',
       checked,
       total,
+      elapsedMs,
     });
   } finally {
     cancelledRequests.delete(message.requestId);

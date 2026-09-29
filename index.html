@@ -197,6 +197,12 @@
           <button id="tab-break" class="lab-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-break" tabindex="-1">
             <span>03</span> The Break
           </button>
+          <button id="tab-wall" class="lab-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-wall" tabindex="-1">
+            <span>04</span> The Wall
+          </button>
+          <button id="tab-paper" class="lab-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-paper" tabindex="-1">
+            <span>05</span> Paper vs Practice
+          </button>
         </div>
 
         <section id="pane-cipher" class="lab-pane" role="tabpanel" aria-labelledby="tab-cipher">
@@ -380,6 +386,139 @@
             <a href="https://www.usenix.org/conference/usenixsecurity23/presentation/meijer" target="_blank" rel="noopener">USENIX Security 2023</a>
             <a href="https://www.midnightblue.nl/research/2tetra2burst" target="_blank" rel="noopener">2TETRA:2BURST</a>
             <a href="https://systemslibrarian.github.io/crypto-lab-corrupted-oracle/">Related: Corrupted Oracle</a>
+          </nav>
+        </section>
+
+        <section id="pane-wall" class="lab-pane" role="tabpanel" aria-labelledby="tab-wall" hidden>
+          <div class="pane-heading">
+            <div>
+              <p class="section-kicker">PANE 04 / EXTRAPOLATION</p>
+              <h2>The Wall</h2>
+            </div>
+            <p>Exhibit 3 tested a measured number of candidates in a measured amount of time. That is one rate, from one browser, on one machine. This pane divides larger keyspaces by that rate. Nothing here is a second search and nothing here is a prediction &mdash; every row is an extrapolation, and the arithmetic is printed beside it.</p>
+          </div>
+
+          <div id="wall-absent" class="verdict wall-absent" role="status" data-rate="absent">
+            NO MEASURED RATE YET &mdash; run the search in Exhibit 3 (The Break). This pane stays empty until your own machine has produced a number; it does not ship a default rate.
+          </div>
+
+          <div id="wall-body" hidden>
+            <div class="rate-readout" role="group" aria-label="Measured search rate">
+              <div class="rate-figure">
+                <span>MEASURED IN THIS BROWSER</span>
+                <strong><output id="wall-rate">0</output> candidates/second</strong>
+              </div>
+              <p id="wall-formula" class="rate-formula">&mdash;</p>
+              <p id="wall-rate-caveat" class="rate-caveat" hidden></p>
+            </div>
+
+            <fieldset class="scale-control">
+              <legend>Scale it up &mdash; every multiplier below is your assumption, not a measurement</legend>
+              <div id="wall-tiers" class="scale-tiers" role="radiogroup" aria-label="Scale-up assumption"></div>
+              <div class="scale-editor">
+                <div class="field field-short">
+                  <label for="wall-multiplier">Assumed total speed-up <span>&times; this browser</span></label>
+                  <input id="wall-multiplier" type="number" min="1" step="any" value="1" inputmode="decimal" autocomplete="off" aria-describedby="wall-assumption" />
+                </div>
+                <p id="wall-assumption" class="scale-assumption">&mdash;</p>
+              </div>
+              <p id="wall-absurd" class="scale-absurd" role="status" hidden></p>
+            </fieldset>
+
+            <div class="chart-region" role="region" aria-label="Extrapolated brute-force cost by keyspace" tabindex="0">
+              <p class="chart-axis-note">Bar length is the keyspace exponent on a log<sub>2</sub> scale, 0 to 256 bits. The two marks are your own machine&rsquo;s: the keyspace this rate clears in one second, and in one year.</p>
+              <div id="wall-chart" class="bar-chart" role="list"></div>
+            </div>
+
+            <div id="wall-verdict" class="verdict wall-verdict" role="status" aria-live="polite" data-state="pending" data-claim="pending">
+              Extrapolation pending.
+            </div>
+
+            <section class="negative-claims" aria-labelledby="wall-limits-title">
+              <p class="section-kicker">WHAT THIS PANE DOES NOT SHOW</p>
+              <h3 id="wall-limits-title">One machine is not a forecast</h3>
+              <ul>
+                <li>The rate is one browser on one machine, measured once. These rows are order-of-magnitude illustrations, not predictions of what any attacker can do.</li>
+                <li>The multipliers are assumptions you typed. The page renders whatever you enter and labels an absurd one as absurd; it does not know what hardware exists.</li>
+                <li>Classical search only. Grover&rsquo;s algorithm changes the exponent rather than the constant, and this pane does not model it &mdash; see <a href="https://systemslibrarian.github.io/crypto-lab-grover/">Grover</a>.</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="pane-paper" class="lab-pane" role="tabpanel" aria-labelledby="tab-paper" hidden>
+          <div class="pane-heading">
+            <div>
+              <p class="section-kicker">PANE 05 / PUBLISHED CRYPTANALYSIS</p>
+              <h2>Paper vs Practice</h2>
+            </div>
+            <p>&ldquo;Broken&rdquo; means one thing in a paper and another on a radio. Every row below is a published key-recovery attack on AES at its <em>full</em> round count, read out of the primary paper&rsquo;s own summary table. Each sits under its brute-force line &mdash; and none of them finishes.</p>
+          </div>
+
+          <div class="chart-region" role="region" aria-label="Published full-round attacks against the brute-force lines" tabindex="0">
+            <p class="chart-axis-note">Bar length is log<sub>2</sub> of the attack&rsquo;s stated time complexity, 0 to 256. The dashed rule in each group is that key size&rsquo;s brute-force line.</p>
+            <div id="paper-chart" class="bar-chart attack-chart"></div>
+          </div>
+
+          <div id="paper-verdict" class="verdict paper-verdict" role="status" data-state="pending" data-claim="pending">
+            Attack table pending.
+          </div>
+
+          <div class="trace-region" role="region" aria-label="Published full-round AES attacks with sources" tabindex="0">
+            <table class="attack-table">
+              <caption>Published key-recovery attacks on full-round AES, each figure read from the cited paper&rsquo;s own summary table</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Target</th>
+                  <th scope="col">Attack</th>
+                  <th scope="col">Model</th>
+                  <th scope="col">Goal</th>
+                  <th scope="col">Time</th>
+                  <th scope="col">Data</th>
+                  <th scope="col">Memory</th>
+                  <th scope="col">Source</th>
+                </tr>
+              </thead>
+              <tbody id="paper-body"></tbody>
+            </table>
+          </div>
+
+          <section class="framing-section" aria-labelledby="contrast-title">
+            <p class="section-kicker">SAME WORD / DIFFERENT UNIVERSES</p>
+            <h3 id="contrast-title">Two things called a break</h3>
+            <div class="framing-grid">
+              <article class="framing-column researcher-framing">
+                <span class="source-tag">THIS LAB &middot; MEASURED</span>
+                <h4>TEA1: the cost moved</h4>
+                <p>The reduction in Exhibit 2 moves the real cost of TEA1 to 2<sup>32</sup>. At the rate your own browser measured, that is <strong id="contrast-tea1">&mdash;</strong>. Exhibit 3 already finished a window of it while you watched.</p>
+                <p class="contrast-note" id="contrast-tea1-note">Run Exhibit 3 to fill in your machine&rsquo;s number.</p>
+              </article>
+              <article class="framing-column">
+                <span class="source-tag">PUBLISHED &middot; SOURCED ABOVE</span>
+                <h4>AES: the cost barely moved</h4>
+                <p>The best published single-key attack moves AES&rsquo;s cost to <strong id="contrast-aes">&mdash;</strong> &mdash; <span id="contrast-advantage">&mdash;</span> below the brute-force line. At your measured rate that is <strong id="contrast-aes-time">&mdash;</strong>.</p>
+                <p class="contrast-note">Academically broken. Practically untouched. The reduction in TEA1 was a different kind of event.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="negative-claims" aria-labelledby="paper-limits-title">
+            <p class="section-kicker">WHAT THIS PANE DOES NOT SHOW</p>
+            <h3 id="paper-limits-title">Scoped to the algorithm, and to the classical setting</h3>
+            <ul>
+              <li>&ldquo;Practically secure&rdquo; here is scoped to published cryptanalysis <em>of the AES algorithm</em>. It says nothing about any implementation: padding oracles, nonce reuse, and timing side channels break real systems whose block cipher is untouched. See <a href="https://systemslibrarian.github.io/crypto-lab-aes-modes/">AES Modes</a> and <a href="https://systemslibrarian.github.io/crypto-lab-blind-oracle/">Blind Oracle</a>.</li>
+              <li>Full-round key recovery only. The reduced-round attack frontier and what round counts buy is the security-margin view, and it belongs to <a href="https://systemslibrarian.github.io/crypto-lab-iron-serpent/">Iron Serpent</a> &mdash; this pane does not restate it.</li>
+              <li>Classical figures only. Quantum search changes the exponent; this pane does not model it. See <a href="https://systemslibrarian.github.io/crypto-lab-grover/">Grover</a>.</li>
+              <li>Nothing here certifies any deployed system, and nothing here transfers TEA1&rsquo;s weakness to AES. The two ciphers share a page, not a flaw.</li>
+            </ul>
+          </section>
+
+          <nav class="source-row" aria-label="Primary sources for the attack table">
+            <a href="https://eprint.iacr.org/2011/449" target="_blank" rel="noopener">Biclique Cryptanalysis of the Full AES</a>
+            <a href="https://eprint.iacr.org/2014/932" target="_blank" rel="noopener">Bicliques with Minimal Data and Time</a>
+            <a href="https://eprint.iacr.org/2009/317" target="_blank" rel="noopener">Related-key Cryptanalysis of the Full AES-192 and AES-256</a>
+            <a href="https://eprint.iacr.org/2009/241" target="_blank" rel="noopener">Distinguisher and Related-Key Attack on the Full AES-256</a>
+            <a href="https://eprint.iacr.org/2022/845" target="_blank" rel="noopener">Key Structures</a>
           </nav>
         </section>
 

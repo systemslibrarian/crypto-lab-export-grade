@@ -172,7 +172,7 @@ export async function boot(page: Page): Promise<void> {
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('main#app')).toHaveCount(1);
   await expect(page.locator('a.cl-skip-link')).toHaveAttribute('href', '#app');
-  await expect(page.getByRole('tab')).toHaveCount(3);
+  await expect(page.getByRole('tab')).toHaveCount(5);
   await expect(page.getByRole('tab', { name: /The Cipher/ })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -180,6 +180,8 @@ export async function boot(page: Page): Promise<void> {
   await expect(page.locator('#pane-cipher')).toBeVisible();
   await expect(page.locator('#pane-reduction')).toBeHidden();
   await expect(page.locator('#pane-break')).toBeHidden();
+  await expect(page.locator('#pane-wall')).toBeHidden();
+  await expect(page.locator('#pane-paper')).toBeHidden();
   await expect(page.locator('#kat-verdict')).toHaveAttribute('data-kat', 'pass');
   await expect(
     page.locator('#theme-toggle, #themeToggle, .theme-toggle, [data-theme-toggle]'),
@@ -203,6 +205,18 @@ export async function driveAllStates(page: Page, viewportLabel: string): Promise
   await page.locator('#key-input').fill('00000000000000000000');
   await page.getByRole('button', { name: 'Generate keystream' }).click();
   await expect(page.locator('#cipher-error')).toBeHidden();
+
+  // Exhibit 5 before any search has run: inert, and a real reachable state.
+  await page.getByRole('tab', { name: /The Wall/ }).click();
+  await expect(page.locator('#wall-absent')).toBeVisible();
+  await expect(page.locator('#wall-absent')).toHaveAttribute('data-rate', 'absent');
+  await expect(page.locator('#wall-body')).toBeHidden();
+  await scanAt('wall inert with no measured rate');
+
+  // Exhibit 6 needs no rate, so it renders its sourced table from the start.
+  await page.getByRole('tab', { name: /Paper vs Practice/ }).click();
+  await expect(page.locator('#paper-verdict')).toHaveAttribute('data-claim', 'academically-broken');
+  await scanAt('attack table before any rate exists');
 
   await page.getByRole('tab', { name: /The Reduction/ }).click();
   await expect(page.locator('#pane-reduction')).toBeVisible();
@@ -243,8 +257,39 @@ export async function driveAllStates(page: Page, viewportLabel: string): Promise
   });
   await scanAt('worker search cancelled cleanly');
 
+  // A rate exists by now, because the search above really ran.
+  await page.getByRole('tab', { name: /The Wall/ }).click();
+  await expect(page.locator('#wall-body')).toBeVisible();
+  await expect(page.locator('#wall-verdict')).toHaveAttribute('data-claim', 'wall');
+  await scanAt('wall with a measured rate');
+
+  await page.getByRole('radio', { name: 'A GPU farm' }).check();
+  await expect(page.locator('#wall-multiplier')).toHaveValue('1000000000');
+  await scanAt('wall scaled to a GPU farm');
+
+  await page.locator('#wall-multiplier').fill('1e30');
+  await expect(page.locator('#wall-absurd')).toBeVisible();
+  await scanAt('wall with an absurd multiplier labelled');
+
+  await page.locator('#wall-multiplier').fill('');
+  await expect(page.locator('#wall-assumption')).toContainText('does not hold a usable multiplier');
+  await scanAt('wall with an empty multiplier field');
+
+  await page.locator('#wall-multiplier').fill('1');
+  await expect(page.locator('#wall-absurd')).toBeHidden();
+
+  await page.getByRole('tab', { name: /Paper vs Practice/ }).click();
+  await expect(page.locator('#pane-paper')).toBeVisible();
+  await expect(page.locator('#paper-verdict')).toHaveAttribute('data-claim', 'academically-broken');
+  await scanAt('published attacks plotted against the brute-force lines');
+
+  await page.locator('.attack-table').scrollIntoViewIfNeeded();
+  await scanAt('sourced attack table in view');
+
+  await page.getByRole('tab', { name: /The Cipher/ }).click();
   await page.getByRole('tab', { name: /The Cipher/ }).hover();
   await scanAt('inactive tab hovered');
+  await page.getByRole('tab', { name: /The Break/ }).click();
   await page.locator('#plaintext-input').focus();
   await expect(page.locator('#plaintext-input')).toBeFocused();
   await scanAt('plaintext input focused');
