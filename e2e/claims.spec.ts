@@ -107,9 +107,16 @@ test('a no-op preserves a recovery while a changed input retires it', async ({ p
 });
 
 test('worker cancellation produces no stale recovery verdict', async ({ page }) => {
+  // This key's register sits in the last chunk of its window, so the search has
+  // most of the window left to run when the cancel lands.
   await page.locator('#key-input').fill('00000000000000002100');
   await page.getByRole('tab', { name: /The Break/ }).click();
   await page.getByRole('button', { name: 'Start real search' }).click();
+
+  // Cancel while the search is provably in flight rather than racing it from a
+  // standing start: wait for the worker's own progress before asking it to stop.
+  await expect(page.locator('#attack-count')).not.toHaveText('0 / 65,536 tested');
+  await expect(page.locator('#attack-result')).toBeHidden();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.locator('#attack-status')).toContainText('cancelled cleanly', {
     timeout: 30_000,
