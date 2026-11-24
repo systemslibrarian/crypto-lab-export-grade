@@ -10,10 +10,10 @@ The cryptography and search are real. For tractability, the page selects the $2^
 
 1. **The Cipher** - enter an 80-bit key and frame number, run real TEA1, and compare the default result with the upstream KAT.
 2. **The Reduction** - execute all ten rounds of `tea1_init_key_register`, inspect every S-box input and output, and watch 80 rendered input bits become a computed 32-bit register.
-3. **The Break** - derive known keystream bytes from plaintext and ciphertext, search a $2^{16}$ window in a Web Worker, and independently verify the recovered register against the same TEA1 core.
+3. **The Break** - derive known keystream bytes from plaintext and ciphertext, search a $2^{16}$ window in a Web Worker, and recheck the first matching candidate with the same TEA1 core. A separate comparison against the known fixture distinguishes a correct fixture register from a short-sample collision; it does not recover the original 80-bit key.
 4. **The Record** - compare TCCA's Wassenaar export-compliance explanation with Midnight Blue's intentional-weakness characterization, then follow the 2023 and 2025 disclosure record.
 5. **The Wall** - read the candidates-per-second your own Exhibit 3 run measured, with the division visible, and extrapolate that one rate to $2^{32}$, $2^{40}$, $2^{56}$, $2^{80}$, $2^{128}$, and $2^{256}$ on a log2 scale. A scale-up control carries three editable multipliers, each labeled as your assumption rather than a fact, and the chart marks the keyspace your own machine clears in one second and in one year. Nothing renders until you have run Exhibit 3.
-6. **Paper vs Practice** - thirteen published key-recovery attacks on *full-round* AES, each figure read from the cited paper's own summary table, plotted as log2 time against the $2^{128}$, $2^{192}$, and $2^{256}$ brute-force lines with data and memory beside it. The biclique results sit a couple of bits under the line; the related-key results sit far below it and require an attacker model no protocol supplies.
+6. **Paper vs Practice** - thirteen published key-recovery attacks on *full-round* AES, each figure read from the cited paper's own summary table, plotted as log2 time against the $2^{128}$, $2^{192}$, and $2^{256}$ brute-force lines with data and memory beside it. The biclique results sit a couple of bits under the line; the related-key results sit far below it and require access under specially related keys, beyond ordinary single-key access. The six 2014 rows use the paper's without-SIM columns; its higher-memory sieve-in-the-middle variants are disclosed separately.
 
 ## When to Use It
 
@@ -30,22 +30,22 @@ Generate a TEA1 keystream, step through the complete key load, and recover the r
 ## What Can Go Wrong
 
 - An 80-bit input label does not provide 80-bit resistance when initialization compresses the key to 32 bits.
-- A short known-keystream sample can create false positives, so the lab requires at least four bytes and verifies every recovered candidate byte-for-byte.
+- A short known-keystream sample can create false positives even at four bytes. Rechecking those same bytes is not evidence of uniqueness. The page reports a matching candidate separately from the fixture-register comparison; see the reproducible collision below.
 - An all-zero known-plaintext fixture can obscure what is plaintext, ciphertext, and keystream, so the UI rejects it.
 - A browser cannot honestly claim to sweep all $2^{32}$ candidates interactively; the page labels its $2^{16}$ window and reports the exact number tested.
-- A stale recovery is not evidence for changed inputs; changing the key, frame, or known plaintext retires the verdict.
+- A stale recovery is not evidence for changed inputs; changing the key, frame, or known plaintext retires completed and pending verdicts. Cancellation invalidates the request before notifying the worker, so an already queued answer cannot restore it. Key/frame/output-length edits also retire old cipher bytes; invalid keys clear the key-load trace.
 - A rate measured once, in one browser, on one machine is not a cost model; Exhibit 5 labels every projected figure an extrapolation and refuses to render any of them until the learner's own run has produced a rate.
 - A scale-up multiplier is an assumption, not a measurement, so Exhibit 5 makes all three editable, prints the one in force, and labels a multiplier past $10^{21}$ absurd instead of quietly computing it.
-- A timer too coarse for a fast run makes a rate a lower bound, and a device below one candidate per second makes it a floor; both states say so rather than presenting a derived number as measured.
-- "Broken" in a paper and "broken" on a radio are different events: the best published single-key attack on full AES is 2.49 bits faster than brute force, which is a result and not a threat.
-- An attack model is part of the result, so every row names it; the related-key figures far below the brute-force line assume keys related by attacker-chosen differences, which a protocol does not hand out.
+- A timer too coarse for a fast run gives a lower bound on the rate and upper bounds on duration. A measured rate below one candidate per second uses a declared calculation floor of one, giving lower bounds on duration. The formula prints the denominator actually used and the unfloored rate. Finite extreme multipliers do not turn positive durations into zero through intermediate overflow.
+- "Broken" in a paper and "broken" on a radio are different events: the largest relative single-key advantage among these selected rows is 2.49 bits faster than brute force. This is not the global best: the same 2014 paper gives full-codebook SIM times of 2^125.35, 2^189.31 and 2^253.82 with 2^64 memory units. The page names the AES variant and makes its assumed TEA1-to-AES cost conversion explicit; it does not benchmark AES.
+- An attack model is part of the result, so every row names it; the related-key figures far below the brute-force line assume keys related by attacker-chosen differences, whose availability depends on the protocol's key derivation and interfaces.
 - Reduced-round cryptanalysis is a different measurement from full-round key recovery, so this lab plots only the latter and defers the round-count view to Iron Serpent.
 
 ## Real-World Usage
 
 TETRA was standardized by ETSI in 1995 and is used in more than 100 countries for police, military, emergency-service, transport, industrial, and critical-infrastructure communications. TEA1 is one TETRA air-interface cipher. TCCA states that its effective key was reduced to 32 bits for Wassenaar export compliance; Midnight Blue calls the intentional reduction a backdoor.
 
-The 2023 TETRA:BURST work by Carlo Meijer, Wouter Bokslag, and Jos Wetzels maps the TEA1 reduction to CVE-2022-24402 and the unauthenticated network-time keystream-reuse issue to CVE-2022-24401. Their 2025 2TETRA:2BURST work reports an E2EE algorithm-ID-135 variant with AES-128 traffic-key entropy reduced to 56 bits, associated by the researchers with CVE-2025-52941. As checked on 22 September 2026, the central 2025 CVE records remain reserved, so the page attributes those mappings rather than presenting them as finalized CVE descriptions.
+The 2023 TETRA:BURST work by Carlo Meijer, Wouter Bokslag, and Jos Wetzels maps the TEA1 reduction to CVE-2022-24402 and the unauthenticated network-time keystream-reuse issue to CVE-2022-24401. Their 2025 2TETRA:2BURST work reports an E2EE algorithm-ID-135 variant with AES-128 traffic-key entropy reduced to 56 bits, associated by the researchers with CVE-2025-52941. The page attributes these 2025 identifiers and descriptions to Midnight Blue's disclosure rather than asserting a current central-record status.
 
 ## How to Run Locally
 
@@ -73,13 +73,19 @@ npm run build
 npm run test:a11y
 ```
 
-The suite contains **58 tests**: 33 Vitest unit tests and 25 Playwright browser tests. The unit suite pins both TEA1 vectors from Midnight Blue's `tests.c`, the rate and extrapolation arithmetic including its floors and its refusal to invent a rate, and the sourced attack table's citations and exponents, which it also cross-checks against the counts this README states in prose. The browser claims suite cross-checks the rendered KAT, computed 80-to-32 reduction, real worker recovery, cancellation, hidden panels, stale-verdict retirement, the measured rate re-derived from the two numbers the page prints, every extrapolated row recomputed from the page's own rate, the scale-up multiplier read back off the rendered durations, the absurd-multiplier label, and every plotted attack matched against its table row. The accessibility gate scans reachable desktop and 380px states - including Exhibit 5 inert, Exhibit 5 measured, each scale-up tier, and the attack table - with axe WCAG A/AA rules plus arithmetic text contrast, non-text contrast, reflow, focus, motion, and keyboard-scroller checks.
+The suite contains **76 tests**: 37 Vitest unit tests and 39 Playwright browser tests (37 claims and two complete accessibility gates). The unit suite pins both TEA1 vectors from Midnight Blue's `tests.c`, the rate and extrapolation arithmetic including its floors and its refusal to invent a rate, and the sourced attack table's citations and exponents, which it also cross-checks against the counts this README states in prose. The browser suite includes held real-worker replies delivered after edits or cancellation, replacement-run ordering, failed byte checks, failed reference KATs, worker start/runtime failures, the independent collision fixture, timing-bound controls and extreme multipliers. It also cross-checks the rendered KAT, computed 80-to-32 reduction, real worker recovery, cancellation, hidden panels, stale-verdict retirement, the measured rate re-derived from the two numbers the page prints, every extrapolated row recomputed from the page's own rate, the scale-up multiplier read back off the rendered durations, the absurd-multiplier label, and every plotted attack matched against its table row. The accessibility gate scans reachable desktop and 380px states - including Exhibit 5 inert, Exhibit 5 measured, each scale-up tier, and the attack table - with axe WCAG A/AA rules plus arithmetic text contrast, non-text contrast, reflow, focus, motion, and keyboard-scroller checks.
 
-Measured unit coverage: **98.06% statements**, **95.38% branches**, **100% functions**, and **98.54% lines**.
+Measured unit coverage: **98.05% statements**, **95.58% branches**, **100% functions**, and **98.54% lines**.
 
 Every row in `src/data/attacks.ts` was read from the primary paper's own summary table, and the file records which table. The claims suite fails if a row loses its citation or if a plotted bar stops matching its row.
 
 The TEA1-derived files retain Midnight Blue's copyright and Apache-2.0 notice. See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES/Apache-2.0.txt](THIRD_PARTY_LICENSES/Apache-2.0.txt). The rest of the lab is MIT licensed.
+
+## Reproducing the short-sample collision
+
+With frame `0x11111111` and key `00000000000028d2a8b3`, the fixture register is `0x0000b911`. Enter known plaintext `01020304` and run the search. It first finds `0x0000958e`: both registers produce `b2 b7 46 08`, so a four-byte check cannot distinguish them. Their next four keystream bytes are `67 27 83 50` and `9c 3c 3b 68`, respectively. Extending the known plaintext to `0102030405060708` makes this window search find the fixture register. The result still distinguishes the 32-bit register from the original 80-bit key.
+
+These bytes were independently reproduced with [Midnight Blue's C reference at revision defed030](https://github.com/MidnightBlueLabs/TETRA_crypto/blob/defed030f6155ac70ff5d8bea97b348cb92ee1f6/tea1.c). An audit comparison of 1,000 varied key/frame/length inputs matched that C implementation for all 17,812 generated bytes, all 1,000 key-load registers and all expanded IVs. The existing two upstream KATs remain unchanged.
 
 ## Performance
 

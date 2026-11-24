@@ -7,9 +7,8 @@
 export const SECONDS_PER_YEAR = 31_557_600;
 
 /**
- * Below one candidate per second an extrapolation stops meaning anything, so the
- * rate is floored here and the UI labels the floor. A device this slow is the
- * edge case, not the norm.
+ * This display convention raises rates below one candidate per second to one.
+ * The UI must show the raw rate and label resulting durations as lower bounds.
  */
 export const RATE_FLOOR_PER_SECOND = 1;
 
@@ -32,6 +31,10 @@ export interface RateMeasurement {
   checked: number;
   /** Milliseconds that run spent inside the search loop. */
   elapsedMs: number;
+  /** Denominator used after applying the declared clock-resolution floor. */
+  denominatorMs: number;
+  /** Rate before the optional one-candidate/second display floor. */
+  rawCandidatesPerSecond: number;
   /** checked / (elapsedMs / 1000), after the floors below are applied. */
   candidatesPerSecond: number;
   /** True when the raw rate fell under RATE_FLOOR_PER_SECOND and was clamped up. */
@@ -60,6 +63,8 @@ export function measureRate(checked: number, elapsedMs: number): RateMeasurement
   return {
     checked,
     elapsedMs,
+    denominatorMs: seconds * 1000,
+    rawCandidatesPerSecond: raw,
     candidatesPerSecond: floored ? RATE_FLOOR_PER_SECOND : raw,
     floored,
     timerLimited,
@@ -137,7 +142,7 @@ export interface Extrapolation {
   bits: number;
   /** 2^bits — the candidate count, exact as a double through 2^256. */
   candidates: number;
-  /** Effective rate after the learner's multiplier. */
+  /** Effective rate after the learner's multiplier; may overflow a double. */
   effectiveRatePerSecond: number;
   seconds: number;
   /** log2 of the wall-clock seconds; the position the chart plots. */
@@ -162,14 +167,18 @@ export function extrapolate(
 
   const candidates = 2 ** bits;
   const effectiveRatePerSecond = candidatesPerSecond * multiplier;
-  const seconds = candidates / effectiveRatePerSecond;
+  // A learner can type a finite multiplier whose product with the rate would
+  // overflow. Divide in stages, so a finite duration does not become zero merely
+  // because an intermediate product was infinite. Keep logarithms for the axis.
+  const log2Seconds = bits - Math.log2(candidatesPerSecond) - Math.log2(multiplier);
+  const seconds = (candidates / candidatesPerSecond) / multiplier;
 
   return {
     bits,
     candidates,
     effectiveRatePerSecond,
     seconds,
-    log2Seconds: Math.log2(seconds),
+    log2Seconds,
   };
 }
 
@@ -183,8 +192,8 @@ export function isAbsurdMultiplier(multiplier: number): boolean {
  * learner's own one-second and one-year marks, so the chart reads as cost rather
  * than as a picture of exponents.
  */
-export function bitsReachableIn(seconds: number, ratePerSecond: number): number {
-  return Math.log2(seconds * ratePerSecond);
+export function bitsReachableIn(seconds: number, ratePerSecond: number, multiplier = 1): number {
+  return Math.log2(seconds) + Math.log2(ratePerSecond) + Math.log2(multiplier);
 }
 
 const SCALES: { limit: number; divisor: number; unit: string }[] = [
@@ -235,6 +244,8 @@ export function formatMultiplier(multiplier: number): string {
   if (multiplier === 1) return '×1';
   const exponent = Math.log10(multiplier);
   if (Number.isInteger(exponent) && Math.abs(exponent) >= 3) return `×10^${exponent}`;
-  if (multiplier >= 1_000) return `×${multiplier.toExponential(1).replace('e+', ' × 10^')}`;
+  if (multiplier >= 1_000 || multiplier < 0.01) {
+    return `×${multiplier.toExponential(1).replace(/e\+?/, ' × 10^')}`;
+  }
   return `×${significant(multiplier)}`;
 }

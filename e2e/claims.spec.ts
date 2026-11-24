@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { holdRealWorkerReplies, releaseReplies, waitForHeldAnswer } from './held-worker';
 
 function parseHex(text: string): number[] {
   const compact = text.replace(/\s+/g, '');
@@ -500,4 +501,225 @@ test('an unusable multiplier falls back to the measured rate and says so', async
   await expect(page.locator('#wall-assumption')).toContainText(
     'does not hold a usable multiplier',
   );
+});
+
+test('editing cipher inputs retires old bytes; invalid keys clear the complete key trace', async ({ page }) => {
+  await openReductionAndComplete(page);
+  await page.getByRole('tab', { name: /The Cipher/ }).click();
+  const original = await page.locator('#keystream-output').innerText();
+  await page.locator('#key-input').fill('00 00 00 00 00 00 00 00 00 00');
+  await expect(page.locator('#keystream-output')).toHaveText(original);
+  await expect(page.locator('#trace-body tr')).toHaveCount(10);
+
+  await page.locator('#key-input').fill('00');
+  await expect(page.locator('#keystream-output')).toHaveText('—');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  await expect(page.locator('#cipher-error')).toContainText('exactly 10 bytes');
+  await expect(page.locator('#cipher-byte-count')).toHaveText('NOT GENERATED');
+  await expect(page.locator('#register-output')).toHaveText('—');
+  await expect(page.locator('#trace-body tr')).toHaveCount(0);
+  await expect(page.locator('#key-bit-grid .bit')).toHaveCount(0);
+  await expect(page.locator('#register-bit-grid .bit')).toHaveCount(0);
+  await expect(page.locator('#reduction-verdict')).toHaveAttribute('data-claim', 'error');
+
+  await page.locator('#key-input').fill('00000000000000000001');
+  await expect(page.locator('#register-output')).toHaveText('0x00000000');
+  await expect(page.locator('#load-step-label')).toHaveText('0 / 10 loaded');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  await expect(page.locator('#keystream-output')).not.toHaveText(original);
+});
+
+test('changed frame and output length retire bytes and fractional lengths are rejected', async ({ page }) => {
+  await page.locator('#frame-input').fill('0x11111112');
+  await expect(page.locator('#keystream-output')).toHaveText('—');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  await expect(page.locator('#keystream-output')).not.toHaveText('—');
+  await page.locator('#length-input').fill('4.5');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  await expect(page.locator('#cipher-error')).toContainText('whole number');
+  await expect(page.locator('#keystream-output')).toHaveText('—');
+  await page.locator('#length-input').fill('');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  await expect(page.locator('#keystream-output')).toHaveText('—');
+  await page.locator('#length-input').fill('4');
+  await page.getByRole('button', { name: 'Generate keystream' }).click();
+  expect(parseHex(await page.locator('#keystream-output').innerText())).toHaveLength(4);
+});
+
+test('key loading and the attack sample do not depend on the cipher display length', async ({ page }) => {
+  await page.locator('#length-input').fill('4.5');
+  await openReductionAndComplete(page);
+  await expect(page.locator('#register-output')).toHaveText('0xc24e273b');
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'pass');
+});
+
+test('late real answers cannot revive a retired search or finish its replacement', async ({ page }) => {
+  await holdRealWorkerReplies(page);
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page);
+  await page.locator('#plaintext-input').fill('01020304');
+  await expect(page.locator('#retired-status')).toContainText('pending search was retired');
+  await expect(page.getByRole('button', { name: 'Start real search' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page, 2);
+  await releaseReplies(page, 1);
+  await expect(page.locator('#attack-result')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Start real search' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  await releaseReplies(page, 2);
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'pass');
+  await expect(page.locator('#verification-output')).toHaveText('4 / 4 keystream bytes reproduced exactly');
+});
+
+test('cancel retires a result even when the real found message is already queued', async ({ page }) => {
+  await holdRealWorkerReplies(page);
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page);
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await releaseReplies(page);
+  await expect(page.locator('#attack-result')).toBeHidden();
+  await expect(page.locator('#attack-status')).toContainText('cancelled cleanly');
+  await expect(page.getByRole('button', { name: 'Start real search' })).toBeEnabled();
+});
+
+test('a failed byte check has no recovery or OK-AND-BROKEN claim', async ({ page }) => {
+  await holdRealWorkerReplies(page);
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page);
+  await releaseReplies(page, 1, 'register');
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'fail');
+  await expect(page.locator('#recovery-label')).toHaveText('CANDIDATE REJECTED');
+  await expect(page.locator('#verification-output')).toContainText('Verification failed');
+  await expect(page.locator('#attack-result')).not.toContainText('OK-AND-BROKEN');
+  await expect(page.locator('#attack-result')).not.toContainText('KEY RECOVERED');
+});
+
+test('a real four-byte collision is a candidate, while more known bytes recover the fixture register', async ({ page }) => {
+  // Both streams were checked independently with Midnight Blue's C reference.
+  await page.locator('#key-input').fill('00000000000028d2a8b3');
+  await openReductionAndComplete(page);
+  await expect(page.locator('#register-output')).toHaveText('0x0000b911');
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.locator('#plaintext-input').fill('01020304');
+  await expect(page.locator('#known-stream-output')).toHaveText('b2 b7 46 08');
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'candidate');
+  await expect(page.locator('#recovered-register')).toHaveText('0x0000958e');
+  await expect(page.locator('#recovery-label')).toContainText('NOT THE FIXTURE REGISTER');
+  await expect(page.locator('#recovery-summary')).toContainText('SHORT-SAMPLE COLLISION');
+  await expect(page.locator('#candidate-scope')).toContainText('does not prove uniqueness');
+
+  await page.locator('#plaintext-input').fill('0102030405060708');
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'pass');
+  await expect(page.locator('#recovered-register')).toHaveText('0x0000b911');
+  await expect(page.locator('#verification-output')).toHaveText('8 / 8 keystream bytes reproduced exactly');
+  await expect(page.locator('#recovery-summary')).toContainText('original 80-bit key is not recovered');
+});
+
+test('a failed reference fixture cannot be announced as a passing KAT by the reduction', async ({ page }) => {
+  const fixture = '211,63,216,166,5,160,161,187,144,35';
+  let changed = false;
+  await page.route('**/assets/index-*.js', async (route) => {
+    const response = await route.fetch();
+    const source = await response.text();
+    expect(source).toContain(fixture);
+    changed = true;
+    await route.fulfill({ response, body: source.replace(fixture, '210,63,216,166,5,160,161,187,144,35') });
+  });
+  await page.reload();
+  expect(changed).toBe(true);
+  await expect(page.locator('#kat-verdict')).toHaveAttribute('data-kat', 'fail');
+  await openReductionAndComplete(page);
+  await expect(page.locator('#reduction-verdict')).toHaveAttribute('data-claim', 'kat-failed');
+  await expect(page.locator('#reduction-verdict')).toContainText('REFERENCE KAT FAILED');
+  await expect(page.locator('#reduction-verdict')).not.toContainText('KAT passes');
+});
+
+test('a worker error is recoverable with a fresh real worker', async ({ page }) => {
+  await holdRealWorkerReplies(page);
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page);
+  await page.evaluate(() => window.heldWorkers[0].dispatchEvent(new Event('error')));
+  await expect(page.locator('#attack-status')).toContainText('stopped unexpectedly');
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await waitForHeldAnswer(page, 2);
+  await releaseReplies(page, 1);
+  await expect(page.locator('#attack-result')).toBeHidden();
+  await releaseReplies(page, 2);
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'pass');
+  expect(await page.evaluate(() => window.heldWorkers.length)).toBe(2);
+});
+
+test('a worker construction failure leaves the search ready for a retry', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    let first = true;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        if (first) { first = false; throw new Error('Controlled worker start failure'); }
+        super(url, options);
+      }
+    };
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: /The Break/ }).click();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await expect(page.locator('#attack-error')).toContainText('Controlled worker start failure');
+  await expect(page.getByRole('button', { name: 'Start real search' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Start real search' }).click();
+  await expect(page.locator('#attack-result')).toHaveAttribute('data-check', 'pass');
+});
+
+for (const timing of ['clock', 'slow'] as const) {
+  test(`the ${timing} timing boundary prints its actual denominator and duration bound`, async ({ page }) => {
+    await holdRealWorkerReplies(page);
+    await page.getByRole('tab', { name: /The Break/ }).click();
+    await page.getByRole('button', { name: 'Start real search' }).click();
+    await waitForHeldAnswer(page);
+    await releaseReplies(page, 1, timing);
+    await page.getByRole('tab', { name: /The Wall/ }).click();
+    if (timing === 'clock') {
+      await expect(page.locator('#wall-formula')).toContainText('÷ 0.001000 s');
+      await expect(page.locator('#wall-formula')).toContainText('recorded timer value was 0 ms');
+      await expect(page.locator('#wall-rate-caveat')).toContainText('times below are upper bounds');
+      await expect(page.locator('#wall-chart .bar-row[data-bits="32.00"] .bar-value')).toHaveText(/^≤ /);
+    } else {
+      await expect(page.locator('#wall-formula')).toContainText('= 0.1 candidates/second');
+      await expect(page.locator('#wall-rate')).toHaveText('1');
+      await expect(page.locator('#wall-rate-caveat')).toContainText('times are therefore lower bounds');
+      await expect(page.locator('#wall-chart .bar-row[data-bits="32.00"] .bar-value')).toHaveText(/^≥ /);
+    }
+  });
+}
+
+test('an extreme finite multiplier retains finite marks and a positive computed duration', async ({ page }) => {
+  await measureThenOpenWall(page);
+  const rate = Number(await page.locator('#wall-rate').getAttribute('data-rate'));
+  await page.locator('#wall-multiplier').fill('1e308');
+  const seconds = (2 ** 32 / rate) / 1e308;
+  const exponent = Math.floor(Math.log10(seconds));
+  await expect(page.locator('#wall-chart .bar-row[data-bits="32.00"] .bar-value')).toHaveText(
+    `${(seconds / 10 ** exponent).toFixed(1)} × 10^${exponent} seconds`,
+  );
+  await expect(page.locator('#wall-chart')).not.toContainText('Infinity');
+  await expect(page.locator('#wall-chart')).not.toContainText('no measurable time');
+});
+
+test('the AES comparison names its selected columns and the unmeasured cost assumption', async ({ page }) => {
+  await page.getByRole('tab', { name: /Paper vs Practice/ }).click();
+  await expect(page.locator('#contrast-aes')).toContainText('AES-192');
+  await expect(page.locator('#pane-paper')).toContainText('not a continuously updated attack frontier');
+  await expect(page.locator('#pane-paper')).toContainText('without sieve-in-the-middle');
+  await expect(page.locator('#pane-paper')).toContainText('2^189.31');
+  await expect(page.locator('#pane-paper')).toContainText('not an AES timing measurement');
+  await expect(page.locator('#pane-paper')).not.toContainText('no protocol hands');
+  await expect(page.locator('#pane-paper')).not.toContainText('fastest known');
 });

@@ -93,11 +93,15 @@ function parseFrameNumber(value: string): number {
 function readCipherInputs(): CipherInputs {
   const key = parseHexBytes(keyInput.value, 'Key', 10);
   const frameNumber = parseFrameNumber(frameInput.value);
-  const outputLength = Number.parseInt(lengthInput.value, 10);
+  const outputLength = Number(lengthInput.value);
   if (!Number.isInteger(outputLength) || outputLength < 4 || outputLength > 32) {
-    throw new Error('Output length must be between 4 and 32 bytes.');
+    throw new Error('Output length must be a whole number between 4 and 32 bytes.');
   }
   return { key, frameNumber, outputLength };
+}
+
+function cipherFingerprint(inputs: CipherInputs): string {
+  return `${formatBytes(inputs.key)}|${inputs.frameNumber}|${inputs.outputLength}`;
 }
 
 function xorBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
@@ -111,6 +115,7 @@ const cipherForm = requireElement<HTMLFormElement>('cipher-form');
 const cipherError = requireElement<HTMLParagraphElement>('cipher-error');
 const keystreamOutput = requireElement<HTMLOutputElement>('keystream-output');
 const cipherByteCount = requireElement<HTMLSpanElement>('cipher-byte-count');
+const cipherStatus = requireElement<HTMLParagraphElement>('cipher-status');
 const katVerdict = requireElement<HTMLDivElement>('kat-verdict');
 
 const keyBitGrid = requireElement<HTMLDivElement>('key-bit-grid');
@@ -141,15 +146,21 @@ const retiredStatus = requireElement<HTMLParagraphElement>('retired-status');
 const attackResult = requireElement<HTMLDivElement>('attack-result');
 const recoveredRegister = requireElement<HTMLElement>('recovered-register');
 const verificationOutput = requireElement<HTMLParagraphElement>('verification-output');
+const recoveryLabel = requireElement<HTMLElement>('recovery-label');
+const recoverySummary = requireElement<HTMLParagraphElement>('recovery-summary');
+const candidateScope = requireElement<HTMLParagraphElement>('candidate-scope');
 
 let reductionStep = 0;
+let renderedCipherFingerprint: string | null = null;
+let renderedReductionKey: string | null = null;
 let requestSequence = 0;
 let activeRequestId: number | null = null;
 let activeFixture: AttackFixture | null = null;
+let activeProgress: { checked: number; elapsedMs: number } | null = null;
 let resultFingerprint: string | null = null;
 let attackWorker: Worker | null = null;
 
-function renderKat(): void {
+function renderKat(): boolean {
   const actual = tea1(KAT_FRAME, KAT_KEY, KAT_EXPECTED.length);
   const matches = bytesEqual(actual, KAT_EXPECTED);
   katVerdict.dataset.state = matches ? 'ok' : 'error';
@@ -157,6 +168,25 @@ function renderKat(): void {
   katVerdict.textContent = matches
     ? 'KAT MATCH — real TEA1 agrees with the upstream fixture'
     : 'KAT FAILURE — implementation does not match the upstream fixture';
+  return matches;
+}
+
+function clearCipherOutput(message: string): void {
+  keystreamOutput.value = '—';
+  cipherByteCount.textContent = 'NOT GENERATED';
+  renderedCipherFingerprint = null;
+  cipherStatus.textContent = message;
+}
+
+function retireCipherIfInputsChanged(): void {
+  try {
+    if (cipherFingerprint(readCipherInputs()) === renderedCipherFingerprint) return;
+    cipherError.hidden = true;
+  } catch (error) {
+    cipherError.textContent = error instanceof Error ? error.message : 'Invalid cipher input.';
+    cipherError.hidden = false;
+  }
+  clearCipherOutput('Inputs changed. Generate keystream to show bytes for the current inputs.');
 }
 
 function renderCipher(): void {
@@ -165,9 +195,12 @@ function renderCipher(): void {
     const stream = tea1(inputs.frameNumber, inputs.key, inputs.outputLength);
     keystreamOutput.value = formatBytes(stream);
     cipherByteCount.textContent = `${inputs.outputLength} BYTES`;
+    renderedCipherFingerprint = cipherFingerprint(inputs);
+    cipherStatus.textContent = 'Generated from the current key, frame and output length.';
     cipherError.hidden = true;
     renderKat();
   } catch (error) {
+    clearCipherOutput('No keystream is shown for invalid inputs.');
     cipherError.textContent = error instanceof Error ? error.message : 'Invalid cipher input.';
     cipherError.hidden = false;
   }
@@ -201,7 +234,10 @@ function registerBytes(register: number): Uint8Array {
 
 function renderReduction(): void {
   try {
-    const { key } = readCipherInputs();
+    const key = parseHexBytes(keyInput.value, 'Key', 10);
+    const keyFingerprint = formatBytes(key);
+    if (keyFingerprint !== renderedReductionKey) reductionStep = 0;
+    renderedReductionKey = keyFingerprint;
     const trace = traceTea1KeyLoad(key);
     const register = reductionStep === 0 ? 0 : trace[reductionStep - 1].register;
 
@@ -263,13 +299,27 @@ function renderReduction(): void {
     const complete = reductionStep === trace.length;
     loadNext.disabled = complete;
     loadAll.disabled = complete;
-    reductionVerdict.dataset.state = complete ? 'alarm' : 'pending';
-    reductionVerdict.dataset.claim = complete ? 'ok-and-broken' : 'pending';
-    reductionVerdict.textContent = complete
-      ? `OK-AND-BROKEN — the KAT passes, while the generator receives ${TEA1_REGISTER_BITS} computed bits.`
-      : 'Load all ten bytes to inspect the working key.';
+    const katMatches = renderKat();
+    reductionVerdict.dataset.state = complete ? (katMatches ? 'alarm' : 'error') : 'pending';
+    reductionVerdict.dataset.claim = complete ? (katMatches ? 'ok-and-broken' : 'kat-failed') : 'pending';
+    reductionVerdict.textContent = !complete
+      ? 'Load all ten bytes to inspect the working key.'
+      : katMatches
+        ? `OK-AND-BROKEN — the KAT passes, while the generator receives ${TEA1_REGISTER_BITS} computed bits.`
+        : `KEY LOAD COMPUTED — REFERENCE KAT FAILED. The register contains ${TEA1_REGISTER_BITS} bits, but the cipher failed its reference check.`;
   } catch (error) {
+    reductionStep = 0;
+    renderedReductionKey = null;
+    registerOutput.value = '—';
+    nominalBits.value = '—';
+    delete nominalBits.dataset.bits;
+    keyBitGrid.replaceChildren();
+    registerBitGrid.replaceChildren();
+    traceBody.replaceChildren();
+    loadStepLabel.textContent = 'No valid key loaded';
+    loadEquation.textContent = 'Enter a valid ten-byte key to inspect its key load.';
     reductionVerdict.dataset.state = 'error';
+    reductionVerdict.dataset.claim = 'error';
     reductionVerdict.textContent = error instanceof Error ? error.message : 'Invalid key.';
     loadNext.disabled = true;
     loadAll.disabled = true;
@@ -281,7 +331,9 @@ function attackFingerprint(key: Uint8Array, frameNumber: number, plaintext: Uint
 }
 
 function buildAttackFixture(): AttackFixture {
-  const { key, frameNumber } = readCipherInputs();
+  // The attack uses its own 4–8-byte sample, not Exhibit 1's display length.
+  const key = parseHexBytes(keyInput.value, 'Key', 10);
+  const frameNumber = parseFrameNumber(frameInput.value);
   const plaintext = parseHexBytes(plaintextInput.value, 'Known plaintext');
   if (plaintext.length < 4 || plaintext.length > 8) {
     throw new Error('Known plaintext must contain between 4 and 8 bytes.');
@@ -324,8 +376,25 @@ function setAttackProgress(checked: number, total: number): void {
 
 function finishAttackControls(): void {
   activeRequestId = null;
+  activeFixture = null;
+  activeProgress = null;
   attackStart.disabled = false;
   attackCancel.disabled = true;
+}
+
+function retireAttack(message: string): void {
+  const requestId = activeRequestId;
+  // Retire the request locally before asking the worker to stop. A found answer
+  // can already be queued when the cancellation reaches the worker.
+  finishAttackControls();
+  if (requestId !== null) attackWorker?.postMessage({ type: 'cancel', requestId });
+  attackResult.hidden = true;
+  attackResult.dataset.check = 'retired';
+  resultFingerprint = null;
+  retiredStatus.hidden = false;
+  retiredStatus.textContent = message;
+  attackStatus.textContent = 'Ready for the current inputs. No previous recovery is in force.';
+  setAttackProgress(0, ATTACK_WINDOW_SIZE);
 }
 
 /**
@@ -345,6 +414,7 @@ function recordMeasuredRate(checked: number, elapsedMs: number): void {
 
 function handleAttackMessage(message: AttackResponse): void {
   if (message.requestId !== activeRequestId || activeFixture === null) return;
+  activeProgress = { checked: message.checked, elapsedMs: message.elapsedMs };
   setAttackProgress(message.checked, message.total);
 
   if (message.type === 'progress') {
@@ -368,33 +438,53 @@ function handleAttackMessage(message: AttackResponse): void {
     return;
   }
 
-  const reproduced = tea1Inner(
-    tea1ExpandIv(activeFixture.frameNumber),
-    message.register,
-    activeFixture.targetKeystream.length,
-  );
-  const matches = bytesEqual(reproduced, activeFixture.targetKeystream);
+  const inRange = Number.isInteger(message.register)
+    && message.register >= activeFixture.startRegister
+    && message.register < activeFixture.endRegisterExclusive;
+  const reproduced = inRange
+    ? tea1Inner(tea1ExpandIv(activeFixture.frameNumber), message.register, activeFixture.targetKeystream.length)
+    : new Uint8Array();
+  const matches = inRange && bytesEqual(reproduced, activeFixture.targetKeystream);
+  const fixtureRegister = tea1InitKeyRegister(activeFixture.key);
+  const sameFixtureRegister = matches && message.register === fixtureRegister;
   recoveredRegister.textContent = formatRegister(message.register);
   verificationOutput.textContent = matches
     ? `${reproduced.length} / ${reproduced.length} keystream bytes reproduced exactly`
     : 'Verification failed: recovered candidate did not reproduce the target';
-  attackResult.dataset.check = matches ? 'pass' : 'fail';
+  recoveryLabel.textContent = !matches
+    ? 'CANDIDATE REJECTED'
+    : sameFixtureRegister ? 'FIXTURE REGISTER RECOVERED' : 'MATCHING CANDIDATE — NOT THE FIXTURE REGISTER';
+  recoverySummary.textContent = !matches
+    ? 'VERIFICATION FAILED — this answer is not evidence of recovery.'
+    : sameFixtureRegister
+      ? 'OK-AND-BROKEN — the sample matches, and this candidate equals the fixture’s 32-bit register. The original 80-bit key is not recovered.'
+      : `SHORT-SAMPLE COLLISION — the known bytes match, but this fixture was generated with ${formatRegister(fixtureRegister)}. Add more known bytes and search again.`;
+  candidateScope.textContent = matches
+    ? 'The search stops at the first match; matching a short sample does not prove uniqueness. Comparing against the fixture register uses the key this lab already knows, beyond the attacker’s known bytes.'
+    : 'No successful recovery is claimed for a candidate that fails the byte check or falls outside the selected window.';
+  attackResult.dataset.check = !matches ? 'fail' : sameFixtureRegister ? 'pass' : 'candidate';
   attackResult.hidden = false;
   resultFingerprint = activeFixture.fingerprint;
-  attackStatus.textContent = matches
-    ? `Recovered after ${message.checked.toLocaleString()} real TEA1 evaluations.`
-    : 'A worker result failed independent verification.';
+  attackStatus.textContent = !matches
+    ? 'A worker result failed the main-thread byte check.'
+    : sameFixtureRegister
+      ? `Fixture register recovered after ${message.checked.toLocaleString()} real TEA1 evaluations.`
+      : `Matching candidate found after ${message.checked.toLocaleString()} real TEA1 evaluations; it is not the fixture register.`;
   finishAttackControls();
 }
 
 function ensureAttackWorker(): Worker {
   // [extension] A CVE-2022-24401 oracle exhibit can use a separate worker and protocol here.
   if (attackWorker === null) {
-    attackWorker = new Worker(new URL('../attack/worker.ts', import.meta.url), { type: 'module' });
-    attackWorker.addEventListener('message', (event: MessageEvent<AttackResponse>) => {
+    const worker = new Worker(new URL('../attack/worker.ts', import.meta.url), { type: 'module' });
+    attackWorker = worker;
+    worker.addEventListener('message', (event: MessageEvent<AttackResponse>) => {
       handleAttackMessage(event.data);
     });
-    attackWorker.addEventListener('error', () => {
+    worker.addEventListener('error', () => {
+      if (attackWorker !== worker) return;
+      worker.terminate();
+      attackWorker = null;
       attackStatus.textContent = 'The search worker stopped unexpectedly.';
       finishAttackControls();
     });
@@ -418,7 +508,8 @@ function prepareAttackPreview(): void {
 function retireResultIfInputsChanged(): void {
   let currentFingerprint: string | null = null;
   try {
-    const { key, frameNumber } = readCipherInputs();
+    const key = parseHexBytes(keyInput.value, 'Key', 10);
+    const frameNumber = parseFrameNumber(frameInput.value);
     const plaintext = parseHexBytes(plaintextInput.value, 'Known plaintext');
     currentFingerprint = attackFingerprint(key, frameNumber, plaintext);
   } catch {
@@ -426,10 +517,7 @@ function retireResultIfInputsChanged(): void {
   }
 
   if (resultFingerprint !== null && currentFingerprint !== resultFingerprint) {
-    attackResult.hidden = true;
-    attackResult.dataset.check = 'retired';
-    resultFingerprint = null;
-    retiredStatus.hidden = false;
+    retireAttack('A previous result was retired because an input changed.');
   }
 
   if (
@@ -437,7 +525,7 @@ function retireResultIfInputsChanged(): void {
     activeFixture !== null &&
     currentFingerprint !== activeFixture.fingerprint
   ) {
-    ensureAttackWorker().postMessage({ type: 'cancel', requestId: activeRequestId });
+    retireAttack('The pending search was retired because an input changed. Any late answer is ignored.');
   }
 }
 
@@ -470,6 +558,7 @@ attackStart.addEventListener('click', () => {
     requestSequence += 1;
     activeRequestId = requestSequence;
     activeFixture = fixture;
+    activeProgress = null;
     retiredStatus.hidden = true;
     attackResult.hidden = true;
     attackResult.dataset.check = 'pending';
@@ -489,14 +578,16 @@ attackStart.addEventListener('click', () => {
   } catch (error) {
     attackError.textContent = error instanceof Error ? error.message : 'Invalid attack fixture.';
     attackError.hidden = false;
+    finishAttackControls();
+    attackStatus.textContent = 'Search could not start. Correct the reported problem and try again.';
   }
 });
 
 attackCancel.addEventListener('click', () => {
   if (activeRequestId !== null) {
-    ensureAttackWorker().postMessage({ type: 'cancel', requestId: activeRequestId });
-    attackStatus.textContent = 'Cancellation requested…';
-    attackCancel.disabled = true;
+    if (activeProgress !== null) recordMeasuredRate(activeProgress.checked, activeProgress.elapsedMs);
+    retireAttack('The search was cancelled. Any late answer is ignored.');
+    attackStatus.textContent = 'Search cancelled cleanly. No recovery is claimed.';
   }
 });
 
@@ -506,6 +597,11 @@ for (const input of [keyInput, frameInput, plaintextInput]) {
     prepareAttackPreview();
   });
 }
+
+for (const input of [keyInput, frameInput, lengthInput]) {
+  input.addEventListener('input', retireCipherIfInputsChanged);
+}
+keyInput.addEventListener('input', renderReduction);
 
 // ---------------------------------------------------------------------------
 // Exhibit 5 — The Wall
@@ -639,14 +735,15 @@ function renderWall(): void {
   wallRate.value = Math.round(rate.candidatesPerSecond).toLocaleString();
   wallRate.dataset.rate = String(rate.candidatesPerSecond);
   wallFormula.textContent =
-    `${rate.checked.toLocaleString()} candidates ÷ ${(rate.elapsedMs / 1000).toFixed(6)} s of search ` +
-    `= ${Math.round(rate.candidatesPerSecond).toLocaleString()} candidates/second. ` +
+    `${rate.checked.toLocaleString()} candidates ÷ ${(rate.denominatorMs / 1000).toFixed(6)} s of search ` +
+    `= ${rate.rawCandidatesPerSecond.toLocaleString(undefined, { maximumFractionDigits: 3 })} candidates/second. ` +
+    (rate.timerLimited ? `The denominator uses a 1 ms floor; the recorded timer value was ${rate.elapsedMs} ms. ` : '') +
     'Timed inside the Exhibit 3 loop, excluding the pauses that keep the UI responsive.';
 
   const caveats: string[] = [];
   if (rate.floored) {
     caveats.push(
-      'This device measured below one candidate per second, so the rate is floored at 1 and every row below is a floor, not a measurement.',
+      'The measured rate is below one candidate per second. These extrapolations use a declared floor of 1 candidate/second, an upper bound on that measured rate; the displayed times are therefore lower bounds.',
     );
   }
   if (rate.timerLimited) {
@@ -668,18 +765,17 @@ function renderWall(): void {
     ? `ABSURD ASSUMPTION — ${formatMultiplier(multiplier)} assumes more parallel engines than anyone has built or proposed. The rows below still compute it exactly; they are arithmetic on a number you invented.`
     : '';
 
-  const effectiveRate = rate.candidatesPerSecond * multiplier;
   const marks: ChartRow[] = [
     {
-      bits: bitsReachableIn(1, effectiveRate),
-      headline: `2^${bitsReachableIn(1, effectiveRate).toFixed(1)}`,
+      bits: bitsReachableIn(1, rate.candidatesPerSecond, multiplier),
+      headline: `2^${bitsReachableIn(1, rate.candidatesPerSecond, multiplier).toFixed(1)}`,
       detail: 'Your own mark: the keyspace this scale clears in one second.',
       value: 'one second',
       kind: 'mark',
     },
     {
-      bits: bitsReachableIn(SECONDS_PER_YEAR, effectiveRate),
-      headline: `2^${bitsReachableIn(SECONDS_PER_YEAR, effectiveRate).toFixed(1)}`,
+      bits: bitsReachableIn(SECONDS_PER_YEAR, rate.candidatesPerSecond, multiplier),
+      headline: `2^${bitsReachableIn(SECONDS_PER_YEAR, rate.candidatesPerSecond, multiplier).toFixed(1)}`,
       detail: 'Your own mark: the keyspace this scale clears in one year.',
       value: 'one year',
       kind: 'mark',
@@ -692,7 +788,7 @@ function renderWall(): void {
       bits: target.bits,
       headline: `2^${target.bits}`,
       detail: `${target.label} — ${target.detail}`,
-      value: formatDuration(projected.seconds),
+      value: `${rate.floored ? '≥ ' : rate.timerLimited ? '≤ ' : ''}${formatDuration(projected.seconds)}`,
       kind: 'target' as const,
       state: target.thisLab,
     };
@@ -716,7 +812,8 @@ function renderWall(): void {
     `At ${formatMultiplier(multiplier)} that rate, the full 32-bit register TEA1 actually uses would take ` +
     `${formatDuration(register.seconds)}. The 80 bits on the label would take ` +
     `${formatDuration(labelled.seconds)}, and 128 would take ${formatDuration(aes128.seconds)}. ` +
-    'Those three are extrapolated from one browser, not predicted.';
+    'Those three are extrapolated from one browser, not predicted. They cover the full space, not the average time to find a uniformly placed target. ' +
+    (rate.floored ? 'The quoted times are lower bounds under the declared rate floor.' : rate.timerLimited ? 'The quoted times are upper bounds under the clock-resolution floor.' : '');
 
   renderContrast();
 }
@@ -865,7 +962,7 @@ function renderPaper(): void {
 
 function renderContrast(): void {
   const best = largestSingleKeyAdvantage();
-  contrastAes.textContent = best.timeLabel;
+  contrastAes.textContent = `${best.target}: ${best.timeLabel}`;
   contrastAdvantage.textContent = `${advantageBits(best).toFixed(2)} bits`;
 
   if (measuredRate === null) {
@@ -878,10 +975,11 @@ function renderContrast(): void {
   // Deliberately unscaled. This panel says "the rate your own browser measured",
   // so it uses that rate and nothing else — a multiplier typed into Exhibit 5
   // would make the sentence false.
-  contrastTea1.textContent = formatDuration(
+  const bound = measuredRate.floored ? '≥ ' : measuredRate.timerLimited ? '≤ ' : '';
+  contrastTea1.textContent = bound + formatDuration(
     extrapolate(32, measuredRate.candidatesPerSecond, 1).seconds,
   );
-  contrastAesTime.textContent = formatDuration(
+  contrastAesTime.textContent = bound + formatDuration(
     extrapolate(best.log2Time, measuredRate.candidatesPerSecond, 1).seconds,
   );
   contrastTea1Note.hidden = true;

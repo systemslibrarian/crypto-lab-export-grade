@@ -238,6 +238,7 @@
             <div class="output-console" role="region" aria-label="TEA1 output">
               <div class="console-header"><span>TEA1 / OUTPUT</span><span id="cipher-byte-count">10 BYTES</span></div>
               <output id="keystream-output" class="hex-output" aria-live="polite"></output>
+              <p id="cipher-status" class="console-note" role="status"></p>
               <div id="kat-verdict" class="verdict" role="status" aria-live="polite" data-state="pending">
                 Reference KAT pending
               </div>
@@ -307,7 +308,7 @@
               <div class="field">
                 <label for="plaintext-input">Known plaintext <span>hex, 4–8 bytes</span></label>
                 <input id="plaintext-input" type="text" value="524144494f" inputmode="text" autocomplete="off" spellcheck="false" maxlength="23" aria-describedby="plaintext-help" />
-                <small id="plaintext-help">Default bytes spell “RADIO”. All-zero and short fixtures are rejected.</small>
+                <small id="plaintext-help">Default bytes spell “RADIO”. All-zero and short fixtures are rejected. Even four or more matching bytes can collide; the result separately checks this known fixture’s register.</small>
               </div>
               <dl class="attack-fixture">
                 <div><dt>CIPHERTEXT</dt><dd id="ciphertext-output">—</dd></div>
@@ -328,10 +329,11 @@
               <p id="attack-status" role="status" aria-live="polite">Ready. The full 32-bit space contains 65,536 windows of this size.</p>
               <p id="retired-status" class="retired-status" role="status" hidden>A previous result was retired because an input changed.</p>
               <div id="attack-result" class="attack-result" data-check="pending" hidden>
-                <span class="result-label">EFFECTIVE KEY RECOVERED</span>
+                <span id="recovery-label" class="result-label">Candidate pending</span>
                 <strong id="recovered-register">0x00000000</strong>
                 <p id="verification-output">0 / 0 bytes reproduced</p>
-                <p class="ok-broken">OK-AND-BROKEN — the cipher output matches byte-for-byte, and the working key is only 32 bits.</p>
+                <p id="recovery-summary" class="ok-broken"></p>
+                <p id="candidate-scope"></p>
               </div>
             </div>
           </div>
@@ -371,7 +373,7 @@
               </li>
               <li>
                 <time datetime="2025">2025</time>
-                <div><strong>2TETRA:2BURST · Black Hat USA 2025.</strong><p>The same researchers report algorithm ID 135 reducing AES-128 traffic-key entropy to 56 bits (associated with CVE-2025-52941), alongside replay and injection findings. This lab reports that result; it does not re-derive it.</p><p class="record-caveat">Record status checked 22 September 2026: the central 2025 CVE entries remain reserved, so these mappings are attributed to the researchers.</p></div>
+                <div><strong>2TETRA:2BURST · Black Hat USA 2025.</strong><p>The same researchers report algorithm ID 135 reducing AES-128 traffic-key entropy to 56 bits (associated with CVE-2025-52941), alongside replay and injection findings. This lab reports that result; it does not re-derive it.</p><p class="record-caveat">The 2025 CVE identifiers and descriptions here are attributed to Midnight Blue’s disclosure.</p></div>
               </li>
             </ol>
           </section>
@@ -439,6 +441,7 @@
               <h3 id="wall-limits-title">One machine is not a forecast</h3>
               <ul>
                 <li>The rate is one browser on one machine, measured once. These rows are order-of-magnitude illustrations, not predictions of what any attacker can do.</li>
+                <li>Every row assumes a candidate costs the same as this TEA1 search. AES and DES are not benchmarked here. The durations cover a complete keyspace; an exhaustive search for one uniformly placed target takes about half that work on average.</li>
                 <li>The multipliers are assumptions you typed. The page renders whatever you enter and labels an absurd one as absurd; it does not know what hardware exists.</li>
                 <li>Classical search only. Grover&rsquo;s algorithm changes the exponent rather than the constant, and this pane does not model it &mdash; see <a href="https://systemslibrarian.github.io/crypto-lab-grover/">Grover</a>.</li>
               </ul>
@@ -452,7 +455,7 @@
               <p class="section-kicker">PANE 05 / PUBLISHED CRYPTANALYSIS</p>
               <h2>Paper vs Practice</h2>
             </div>
-            <p>&ldquo;Broken&rdquo; means one thing in a paper and another on a radio. Every row below is a published key-recovery attack on AES at its <em>full</em> round count, read out of the primary paper&rsquo;s own summary table. Each sits under its brute-force line &mdash; and none of them finishes.</p>
+            <p>&ldquo;Broken&rdquo; means one thing in a paper and another on a radio. These selected papers from 2009&ndash;2022 describe key-recovery attacks on AES at its <em>full</em> round count. Their reported complexities sit below the full-space brute-force lines, while their time, data and memory requirements remain impractical. This is a cited comparison, not a continuously updated attack frontier.</p>
           </div>
 
           <div class="chart-region" role="region" aria-label="Published full-round attacks against the brute-force lines" tabindex="0">
@@ -496,7 +499,7 @@
               <article class="framing-column">
                 <span class="source-tag">PUBLISHED &middot; SOURCED ABOVE</span>
                 <h4>AES: the cost barely moved</h4>
-                <p>The best published single-key attack moves AES&rsquo;s cost to <strong id="contrast-aes">&mdash;</strong> &mdash; <span id="contrast-advantage">&mdash;</span> below the brute-force line. At your measured rate that is <strong id="contrast-aes-time">&mdash;</strong>.</p>
+                <p>The largest relative single-key advantage among these cited rows is <strong id="contrast-aes">&mdash;</strong> &mdash; <span id="contrast-advantage">&mdash;</span> below that variant&rsquo;s full-space brute-force line. If each AES-equivalent computation cost as much as a TEA1 candidate in your run, it would take <strong id="contrast-aes-time">&mdash;</strong>. This compares scales; it is not an AES timing measurement.</p>
                 <p class="contrast-note">Academically broken. Practically untouched. The reduction in TEA1 was a different kind of event.</p>
               </article>
             </div>
@@ -508,6 +511,8 @@
             <ul>
               <li>&ldquo;Practically secure&rdquo; here is scoped to published cryptanalysis <em>of the AES algorithm</em>. It says nothing about any implementation: padding oracles, nonce reuse, and timing side channels break real systems whose block cipher is untouched. See <a href="https://systemslibrarian.github.io/crypto-lab-aes-modes/">AES Modes</a> and <a href="https://systemslibrarian.github.io/crypto-lab-blind-oracle/">Blind Oracle</a>.</li>
               <li>Full-round key recovery only. The reduced-round attack frontier and what round counts buy is the security-margin view, and it belongs to <a href="https://systemslibrarian.github.io/crypto-lab-iron-serpent/">Iron Serpent</a> &mdash; this pane does not restate it.</li>
+              <li>Related-key attacks need access under keys with specified relationships, beyond ordinary access under one secret key. Whether a protocol exposes that capability depends on its key derivation and interfaces.</li>
+              <li>The six 2014 rows use the paper&rsquo;s &ldquo;without sieve-in-the-middle&rdquo; (SIM) column. Its higher-memory SIM variants reduce the full-codebook times further, to 2^125.35, 2^189.31 and 2^253.82, using 2^64 memory units. Thus 2.49 bits is the largest advantage in the selected rows, not a best-known bound for AES.</li>
               <li>Classical figures only. Quantum search changes the exponent; this pane does not model it. See <a href="https://systemslibrarian.github.io/crypto-lab-grover/">Grover</a>.</li>
               <li>Nothing here certifies any deployed system, and nothing here transfers TEA1&rsquo;s weakness to AES. The two ciphers share a page, not a flaw.</li>
             </ul>

@@ -30,6 +30,8 @@ describe('measured search rate', () => {
     const rate = measureRate(2_048, 0);
     expect(rate.timerLimited).toBe(true);
     expect(rate.candidatesPerSecond).toBe(2_048_000);
+    expect(rate.elapsedMs).toBe(0);
+    expect(rate.denominatorMs).toBe(1);
   });
 
   it('refuses to invent a rate when nothing was searched', () => {
@@ -72,6 +74,23 @@ describe('extrapolation', () => {
     expect(isAbsurdMultiplier(ABSURD_MULTIPLIER)).toBe(true);
     expect(isAbsurdMultiplier(ABSURD_MULTIPLIER / 10)).toBe(false);
     expect(isAbsurdMultiplier(1e30)).toBe(true);
+  });
+
+  it('preserves a nonzero duration when a finite scale makes the rate product overflow', () => {
+    const projected = extrapolate(32, 80_000, 1e308);
+    expect(projected.seconds).toBeGreaterThan(0);
+    expect(projected.seconds / 5.36870912e-304).toBeCloseTo(1, 12);
+    expect(Number.isFinite(projected.log2Seconds)).toBe(true);
+    expect(Number.isFinite(bitsReachableIn(31_557_600, 80_000, 1e308))).toBe(true);
+  });
+
+  it('the slow-rate floor gives a lower duration bound, not the raw measured rate', () => {
+    const rate = measureRate(1, 10_000);
+    expect(rate.rawCandidatesPerSecond).toBe(0.1);
+    expect(rate.denominatorMs).toBe(10_000);
+    expect(extrapolate(32, rate.candidatesPerSecond, 1).seconds).toBeLessThan(
+      extrapolate(32, rate.rawCandidatesPerSecond, 1).seconds,
+    );
   });
 
   it('inverts cleanly: the bits a rate clears in a second round-trip', () => {
@@ -119,5 +138,6 @@ describe('duration formatting', () => {
     expect(formatMultiplier(7.5e18)).toBe('×7.5 × 10^18');
     expect(formatMultiplier(64)).toBe('×64.0');
     expect(formatMultiplier(2.5)).toBe('×2.50');
+    expect(formatMultiplier(0.000025)).toBe('×2.5 × 10^-5');
   });
 });

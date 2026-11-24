@@ -59,7 +59,7 @@ const BOGDANOV_2014: Citation = {
   venue: 'ICISC 2014 (extended version, IACR ePrint 2014/932)',
   year: 2014,
   url: 'https://eprint.iacr.org/2014/932',
-  locator: 'Table 1, "Key recovery with bicliques for full AES"',
+  locator: 'Table 1, "Key recovery with bicliques for full AES", computations and memory WITHOUT SIM',
 };
 
 const BIRYUKOV_2009: Citation = {
@@ -154,7 +154,7 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 10,
     attack: 'Biclique at the unicity distance',
     model: 'single-key',
-    modelDetail: 'No related keys assumed. Success probability 1.',
+    modelDetail: 'No related keys assumed. Success probability 1. Without sieve-in-the-middle (SIM).',
     goal: 'Secret key recovery, minimum data',
     log2Time: 126.67,
     timeLabel: '2^126.67 computations',
@@ -173,7 +173,7 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 12,
     attack: 'Biclique at the unicity distance',
     model: 'single-key',
-    modelDetail: 'No related keys assumed. Success probability 1.',
+    modelDetail: 'No related keys assumed. Success probability 1. Without sieve-in-the-middle (SIM).',
     goal: 'Secret key recovery, minimum data',
     log2Time: 190.9,
     timeLabel: '2^190.9 computations',
@@ -191,7 +191,7 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 14,
     attack: 'Biclique at the unicity distance',
     model: 'single-key',
-    modelDetail: 'No related keys assumed. Success probability 1.',
+    modelDetail: 'No related keys assumed. Success probability 1. Without sieve-in-the-middle (SIM).',
     goal: 'Secret key recovery, minimum data',
     log2Time: 255,
     timeLabel: '2^255 computations',
@@ -209,8 +209,8 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 10,
     attack: 'Biclique with the full codebook',
     model: 'single-key',
-    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required.',
-    goal: 'Secret key recovery, fastest known',
+    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required. Without SIM.',
+    goal: 'Secret key recovery, full codebook',
     log2Time: 125.56,
     timeLabel: '2^125.56 computations',
     log2Data: 128,
@@ -218,7 +218,7 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     log2Memory: 8,
     memoryLabel: '2^8',
     citation: BOGDANOV_2014,
-    note: 'The fastest published single-key attack on full AES-128, and it costs the whole codebook to get there.',
+    note: 'The lowest-time full AES-128 single-key row in this cited selection; it requires the whole codebook.',
   },
   {
     id: 'biclique-2014-aes192-codebook',
@@ -228,8 +228,8 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 12,
     attack: 'Biclique with the full codebook',
     model: 'single-key',
-    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required.',
-    goal: 'Secret key recovery, fastest known',
+    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required. Without SIM.',
+    goal: 'Secret key recovery, full codebook',
     log2Time: 189.51,
     timeLabel: '2^189.51 computations',
     log2Data: 128,
@@ -246,8 +246,8 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     fullRounds: 14,
     attack: 'Biclique with the full codebook',
     model: 'single-key',
-    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required.',
-    goal: 'Secret key recovery, fastest known',
+    modelDetail: 'No related keys assumed, but every plaintext-ciphertext pair is required. Without SIM.',
+    goal: 'Secret key recovery, full codebook',
     log2Time: 253.87,
     timeLabel: '2^253.87 computations',
     log2Data: 128,
@@ -291,7 +291,7 @@ export const PUBLISHED_ATTACKS: PublishedAttack[] = [
     log2Memory: 77,
     memoryLabel: '2^77',
     citation: BIRYUKOV_2009,
-    note: 'Far below 2^256 — and unreachable, because no protocol hands an attacker four chosen-difference keys.',
+    note: 'Requires an oracle under four related keys, beyond access under a single secret key. A protocol’s key derivation and interfaces determine whether it exposes this capability.',
   },
   {
     id: 'related-key-2009-aes256-weak',
@@ -356,7 +356,7 @@ export function largestSingleKeyAdvantage(): PublishedAttack {
   );
 }
 
-/** The lowest published time against full AES in a given model. */
+/** The lowest time in this cited selection for a given model. */
 export function fastestIn(model: AttackModel): PublishedAttack {
   const rows = PUBLISHED_ATTACKS.filter((attack) => attack.model === model);
   return rows.reduce((best, attack) => (attack.log2Time < best.log2Time ? attack : best));
